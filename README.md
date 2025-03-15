@@ -2,7 +2,7 @@
 
 A simple, secure web application to download YouTube videos as MP3 audio files.
 
-![YouTube Audio Downloader](https://via.placeholder.com/800x400?text=YouTube+Audio+Downloader)
+![YouTube Audio Downloader](https://sharemyimage.com/image/Captura-de-pantalla-2025-03-15-a-las-17.42.35.HJ3750)
 
 ## ✨ Features
 
