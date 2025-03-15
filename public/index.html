@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Download YouTube videos as MP3 audio files easily">
+    <meta name="keywords" content="YouTube, audio, download, MP3, converter">
+    <meta name="author" content="Carlos">
+    <title>YouTube Audio Downloader</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+</head>
+
+<body>
+    <div class="container">
+        <h1>YouTube Audio Downloader</h1>
+        <p>Extract and download audio from YouTube videos in MP3 format.</p>
+
+        <div class="form-container">
+            <input type="text" id="videoUrl" placeholder="Enter YouTube URL here"
+                aria-label="YouTube video URL input" />
+            <br>
+            <div class="button-container">
+                <button id="downloadBtn">
+                    <span class="button-text">Download</span>
+                    <span class="spinner"></span>
+                </button>
+            </div>
+            <p id="statusMessage" class="status-message"></p>
+        </div>
+
+        <div class="info-container">
+            <div class="accordion">
+                <div class="accordion-header">How to use</div>
+                <div class="accordion-content">
+                    <ol>
+                        <li>Copy a YouTube video URL</li>
+                        <li>Paste it in the input field above</li>
+                        <li>Click "Download" and wait for the audio file to download</li>
+                    </ol>
+                    <p>Supported formats: YouTube videos and YouTube Shorts</p>
+                </div>
+            </div>
+
+            <div class="accordion">
+                <div class="accordion-header">Frequently Asked Questions</div>
+                <div class="accordion-content">
+                    <div class="faq-item">
+                        <h3>Why is my download failing?</h3>
+                        <p>This could be due to copyright restrictions, a private video, or server overload. Try another
+                            video or try again later.</p>
+                    </div>
+                    <div class="faq-item">
+                        <h3>How long does downloading take?</h3>
+                        <p>It depends on the video length and your internet connection. Most downloads take less than a
+                            minute.</p>
+                    </div>
+                    <div class="faq-item">
+                        <h3>Is this service free?</h3>
+                        <p>Yes, this service is completely free to use.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>Made with ❤️ by <a href="https://cafeconcarlos.com" target="_blank" rel="noopener noreferrer">Carlos</a></p>
+        <p class="version">Version <span id="appVersion">1.0.0</span></p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

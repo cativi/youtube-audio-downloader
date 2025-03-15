@@ -1,18 +1,47 @@
 {
   "name": "youtube-audio-downloader",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "description": "A simple web application to download YouTube videos as MP3 audio files",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "dev": "cross-env DEBUG=true nodemon index.js",
+    "test": "jest",
+    "lint": "eslint *.js",
+    "postinstall": "node scripts/setup.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "keywords": [
+    "youtube",
+    "audio",
+    "downloader",
+    "mp3",
+    "express"
+  ],
+  "author": "Carlos",
+  "license": "MIT",
   "dependencies": {
     "express": "^4.21.2",
+    "express-rate-limit": "^6.7.0",
     "ffmpeg-static": "^5.2.0",
+    "helmet": "^7.0.0",
     "open": "^10.1.0",
     "youtube-dl-exec": "^3.0.13"
-  }
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "eslint": "^8.42.0",
+    "jest": "^29.5.0",
+    "nodemon": "^2.0.22"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/youtube-audio-downloader.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/youtube-audio-downloader/issues"
+  },
+  "homepage": "https://github.com/your-username/youtube-audio-downloader#readme"
 }

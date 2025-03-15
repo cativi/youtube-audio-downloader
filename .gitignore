@@ -85,6 +85,3 @@ public/build/
 *.sqlite
 *.sqlite3
 *.db
-
-# Application specific
-# Add custom patterns for your specific project needs here

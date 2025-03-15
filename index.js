@@ -1,66 +1,138 @@
 const express = require('express');
 const { exec } = require('youtube-dl-exec');
-const fs = require('fs');
+const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
 const open = (...args) => import('open').then(({ default: open }) => open(...args));
 const app = express();
-const port = 3005;
+const port = process.env.PORT || 3005;
 
-// Check if youtube-dl-exec is installed
-try {
-    require.resolve('youtube-dl-exec');
-} catch (e) {
-    console.error('youtube-dl-exec not found! Install it with: npm install youtube-dl-exec');
-    process.exit(1);
-}
+// Security middleware
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:"],
+        }
+    }
+}));
 
-// Enhanced logging function
+// Rate limiting
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 50, // limit each IP to 50 requests per windowMs
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many requests from this IP, please try again later.'
+});
+app.use('/download', limiter);
+
+// Enhanced logging with timestamp
 const log = {
-    info: (message, data = '') => console.log(`[INFO] ${message}`, data),
+    info: (message, data = '') => console.log(`[INFO][${new Date().toISOString()}] ${message}`, data),
     error: (message, error) => {
-        console.error(`[ERROR] ${message}:`, error);
-        if (error.stack) console.error('[ERROR] Stack trace:', error.stack);
+        console.error(`[ERROR][${new Date().toISOString()}] ${message}:`, error);
+        if (error.stack) console.error(`[ERROR][${new Date().toISOString()}] Stack trace:`, error.stack);
     },
-    debug: (message, data = '') => console.log(`[DEBUG] ${message}`, data)
+    debug: (message, data = '') => {
+        if (process.env.DEBUG === 'true') {
+            console.log(`[DEBUG][${new Date().toISOString()}] ${message}`, data);
+        }
+    }
 };
 
 // Set downloads directory (configurable via env variable)
 const downloadsDir = process.env.DOWNLOADS_DIR || path.join(__dirname, 'downloads');
-if (!fs.existsSync(downloadsDir)) {
-    fs.mkdirSync(downloadsDir);
+
+// Ensure downloads directory exists
+async function ensureDirectoryExists(directory) {
+    try {
+        await fs.access(directory);
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            await fs.mkdir(directory, { recursive: true });
+            log.info(`Created directory: ${directory}`);
+        } else {
+            throw error;
+        }
+    }
+}
+
+// URL validation function
+function isValidYoutubeUrl(url) {
+    if (!url) return false;
+    const regex = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|shorts\/)|youtu\.be\/)[\w-]{11}(\?.*)?$/;
+    return regex.test(url);
 }
 
 // Function to clean up old files
-const cleanupOldFiles = () => {
-    const files = fs.readdirSync(downloadsDir);
-    const now = Date.now();
-    files.forEach(file => {
-        const filePath = path.join(downloadsDir, file);
-        const stats = fs.statSync(filePath);
-        // Remove files older than 1 hour
-        if (now - stats.mtime.getTime() > 60 * 60 * 1000) {
-            fs.unlinkSync(filePath);
-            log.info(`Cleaned up old file: ${file}`);
+async function cleanupOldFiles() {
+    try {
+        const files = await fs.readdir(downloadsDir);
+        const now = Date.now();
+
+        for (const file of files) {
+            const filePath = path.join(downloadsDir, file);
+            const stats = await fs.stat(filePath);
+
+            // Remove files older than 1 hour
+            if (now - stats.mtime.getTime() > 60 * 60 * 1000) {
+                await fs.unlink(filePath);
+                log.info(`Cleaned up old file: ${file}`);
+            }
         }
-    });
-};
+    } catch (error) {
+        log.error('Error during cleanup', error);
+    }
+}
 
-// Clean up periodically
-setInterval(cleanupOldFiles, 15 * 60 * 1000); // Every 15 minutes
+// Middleware to check dependencies
+app.use(async (req, res, next) => {
+    // Only check once per server start
+    if (!app.locals.dependenciesChecked) {
+        try {
+            // Check if youtube-dl-exec is installed
+            require.resolve('youtube-dl-exec');
 
+            // Ensure downloads directory exists
+            await ensureDirectoryExists(downloadsDir);
+
+            // Run initial cleanup
+            await cleanupOldFiles();
+
+            app.locals.dependenciesChecked = true;
+        } catch (e) {
+            log.error('Dependency check failed', e);
+            return res.status(500).send('Server configuration error. Please check logs.');
+        }
+    }
+    next();
+});
+
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Download endpoint
 app.get('/download', async (req, res) => {
     const { url } = req.query;
     log.info('Received download request for URL:', url);
 
-    if (!url || (!url.includes('youtube.com/watch?v=') && !url.includes('youtube.com/shorts/'))) {
+    if (!isValidYoutubeUrl(url)) {
         log.error('Invalid URL provided:', url);
         return res.status(400).send('Invalid or missing YouTube URL');
     }
 
+    let outputPath = null;
+
     try {
         // Generate a unique filename
         const timestamp = Date.now();
-        const outputPath = path.join(downloadsDir, `audio_${timestamp}.mp3`);
+        const uniqueId = Math.random().toString(36).substring(2, 10);
+        outputPath = path.join(downloadsDir, `audio_${timestamp}_${uniqueId}.mp3`);
 
         log.info('Starting download process...');
 
@@ -70,28 +142,52 @@ app.get('/download', async (req, res) => {
             audioFormat: 'mp3',
             audioQuality: 0, // Best quality
             output: outputPath,
-            verbose: true // Debugging info
+            noWarnings: true,
+            preferFreeFormats: true,
+            noCheckCertificate: true // Avoid certificate issues
         };
 
+        if (process.env.DEBUG === 'true') {
+            options.verbose = true;
+        }
+
         log.debug('Executing youtube-dl with options:', options);
-        await exec(url, options);
+
+        // Execute with timeout
+        const downloadPromise = exec(url, options);
+
+        // Add timeout for the download
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Download timeout after 3 minutes')), 3 * 60 * 1000);
+        });
+
+        await Promise.race([downloadPromise, timeoutPromise]);
 
         log.info('Download completed successfully');
 
+        // Check if file exists and has content
+        const fileStats = await fs.stat(outputPath);
+        if (fileStats.size === 0) {
+            throw new Error('Downloaded file is empty');
+        }
+
         // Set headers for file download
         res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Content-Disposition', `attachment; filename="audio_${timestamp}.mp3"`);
+        res.setHeader('Content-Length', fileStats.size);
+        res.setHeader('Content-Disposition', `attachment; filename="youtube_audio_${timestamp}.mp3"`);
 
         // Create read stream and pipe to response
-        const fileStream = fs.createReadStream(outputPath);
+        const fileStream = fsSync.createReadStream(outputPath);
         fileStream.pipe(res);
 
         // Clean up file after sending
-        fileStream.on('end', () => {
-            fs.unlink(outputPath, (err) => {
-                if (err) log.error('Error removing file:', err);
-                else log.info('Temporary file removed successfully');
-            });
+        fileStream.on('end', async () => {
+            try {
+                await fs.unlink(outputPath);
+                log.info('Temporary file removed successfully');
+            } catch (err) {
+                log.error('Error removing file:', err);
+            }
         });
 
         // Handle errors
@@ -103,17 +199,41 @@ app.get('/download', async (req, res) => {
         });
 
         // Handle client disconnection
-        res.on('close', () => {
+        res.on('close', async () => {
             fileStream.destroy();
-            fs.unlink(outputPath, () => {
+            try {
+                await fs.access(outputPath);
+                await fs.unlink(outputPath);
                 log.info('Cleaned up after client disconnection');
-            });
+            } catch (err) {
+                // File might already be deleted, which is fine
+            }
         });
 
     } catch (error) {
         log.error('Download process error:', error);
+
+        // Clean up any partially downloaded file
+        if (outputPath) {
+            try {
+                await fs.access(outputPath);
+                await fs.unlink(outputPath);
+                log.info('Cleaned up partial file after error');
+            } catch (err) {
+                // File might not exist, which is fine
+            }
+        }
+
         if (!res.headersSent) {
-            res.status(500).send('Error processing request');
+            if (error.message.includes('timeout')) {
+                res.status(504).send('Download took too long. Try a shorter video.');
+            } else if (error.message.includes('COPYRIGHT_CLAIM')) {
+                res.status(403).send('This video cannot be downloaded due to copyright restrictions.');
+            } else if (error.message.includes('Video unavailable')) {
+                res.status(404).send('This video is unavailable or private.');
+            } else {
+                res.status(500).send('Error processing request. Please try again later.');
+            }
         }
     }
 });
@@ -129,24 +249,67 @@ app.get('/version', (req, res) => {
     const versions = {
         node: process.version,
         express: require('express/package.json').version,
-        youtubeDl: 'latest'
+        youtubeDl: require('youtube-dl-exec/package.json').version || 'latest',
+        app: require('./package.json').version
     };
     log.info('Version info:', versions);
     res.json(versions);
 });
 
+// Root endpoint - serve index.html
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Handle 404
+app.use((req, res) => {
+    res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+});
 
-app.listen(port, async () => {
+// Handle errors
+app.use((err, req, res, next) => {
+    log.error('Unhandled error', err);
+    res.status(500).send('Something went wrong!');
+});
+
+// Start server
+const server = app.listen(port, async () => {
     log.info(`Server running at http://localhost:${port}`);
     log.info('Available endpoints:');
     log.info(`- Download: http://localhost:${port}/download?url=YOUTUBE_URL`);
     log.info(`- Health: http://localhost:${port}/health`);
     log.info(`- Version: http://localhost:${port}/version`);
 
-    // Auto-open browser
-    await open(`http://localhost:${port}`);
+    // Run cleanup periodically
+    setInterval(cleanupOldFiles, 15 * 60 * 1000); // Every 15 minutes
+
+    // Auto-open browser if not in production
+    if (process.env.NODE_ENV !== 'production') {
+        try {
+            await open(`http://localhost:${port}`);
+        } catch (error) {
+            log.error('Failed to open browser', error);
+        }
+    }
 });
+
+// Graceful shutdown
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+async function gracefulShutdown() {
+    log.info('Received shutdown signal');
+
+    server.close(() => {
+        log.info('HTTP server closed');
+        process.exit(0);
+    });
+
+    // Force close after 10 seconds
+    setTimeout(() => {
+        log.error('Forced shutdown after timeout');
+        process.exit(1);
+    }, 10000);
+}
+
+module.exports = app; 
