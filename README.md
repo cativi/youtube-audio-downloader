@@ -149,7 +149,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 📞 Support
 
-If you encounter any issues or have questions, please [open an issue](https://github.com/your-username/youtube-audio-downloader/issues) on GitHub.
+If you encounter any issues or have questions, please [open an issue](https://github.com/cativi/youtube-audio-downloader/issues) on GitHub.
 
 ---
 
